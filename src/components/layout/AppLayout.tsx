@@ -8,6 +8,7 @@ import { ConfidenceChip } from '@/components/overview/ConfidenceChip'
 import { calculateConfidenceScore } from '@/lib/utils'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { useSupabaseSync } from '@/hooks/useSupabaseSync'
 
 const NAV_ITEMS = [
   { href: '/calendar', label: 'Calendrier', icon: '📅' },
@@ -21,6 +22,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { profile, sessions, plan } = useAppStore()
+  useSupabaseSync()
 
   async function handleLogout() {
     const supabase = createClient()
