@@ -159,6 +159,7 @@ export interface SessionTargets {
 }
 
 export interface SessionReport {
+  // duration stored in minutes (supports decimals for second precision)
   duration?: number
   distance?: number
   avgPace?: string
@@ -184,6 +185,30 @@ export interface SessionReport {
   weather?: string
   completedAt?: string
   source?: IntegrationSource
+  // Running structure
+  warmupMin?: number
+  warmupDist?: number
+  cooldownMin?: number
+  sessionStructure?: string
+  intervalReps?: number
+  intervalDurationMin?: number
+  intervalRecoveryMin?: number
+  intervalPace?: string
+  // Hyrox
+  hyroxWorkoutType?: string
+  hyroxResult?: string
+  detailedExercises?: DetailedExercise[]
+}
+
+export interface DetailedExercise {
+  id: string
+  name: string
+  sets?: number
+  reps?: number
+  weightKg?: number
+  durationMin?: number
+  meters?: number
+  kcal?: number
 }
 
 export interface ExerciseSet {
