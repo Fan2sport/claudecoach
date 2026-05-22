@@ -15,6 +15,7 @@ export function SessionModal({ session, open, onClose }: { session: TrainingSess
   const { updateSession, addSession, removeSession } = useAppStore()
   const [tab, setTab] = useState<Tab>('details')
   const [editing, setEditing] = useState(!session.id || session.title === 'Nouvelle séance')
+  const [alreadyAdded, setAlreadyAdded] = useState(false)
   const [title, setTitle] = useState(session.title)
   const [description, setDescription] = useState(session.description ?? '')
   const [sport, setSport] = useState<Sport>(session.sport)
@@ -37,8 +38,9 @@ export function SessionModal({ session, open, onClose }: { session: TrainingSess
       report: Object.keys(report).length > 0 ? report as SessionReport : undefined,
       updatedAt: new Date().toISOString(),
     }
-    if (isNew) {
+    if (isNew && !alreadyAdded) {
       addSession(updated)
+      setAlreadyAdded(true)
     } else {
       updateSession(session.id, updated)
     }

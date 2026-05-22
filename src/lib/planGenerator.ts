@@ -131,13 +131,15 @@ export function generatePlan(profile: UserProfile): TrainingPlan {
       const isOffPeriod = profile.offPeriods.some(op => dateStr >= op.startDate && dateStr <= op.endDate)
 
       if (!isOffPeriod) {
-        const availableSports = dayAvailability.activities.filter(a => primarySports.includes(a))
-        const sport = availableSports[0] ?? dayAvailability.activities[0]
+        const sportsToday = dayAvailability.activities.filter(a => a !== 'rest' && primarySports.includes(a))
+        // Fallback: if none of the configured activities match the profile sports, take the first non-rest one
+        const effectiveSports = sportsToday.length > 0
+          ? sportsToday
+          : dayAvailability.activities.filter(a => a !== 'rest').slice(0, 1)
 
-        if (sport !== 'rest') {
+        for (const sport of effectiveSports) {
           const templates = SESSION_TEMPLATES[sport] ?? SESSION_TEMPLATES.running
-          const templateIndex = Math.floor(Math.random() * templates.length)
-          const template = templates[templateIndex]
+          const template = templates[Math.floor(Math.random() * templates.length)]
 
           sessions.push({
             id: uuidv4(),
