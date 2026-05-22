@@ -9,10 +9,8 @@ export function useSupabaseSync() {
   const supabase = createClient()
   const store = useAppStore()
   const userId = useRef<string | null>(null)
-  // Track last-synced JSON to avoid saving data we just loaded from DB
   const lastSynced = useRef({ profile: '', sessions: '', plan: '' })
 
-  // Load all data from Supabase on mount
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -30,22 +28,57 @@ export function useSupabaseSync() {
           .limit(1),
       ])
 
-      if (profileRes.data) {
-        lastSynced.current.profile = JSON.stringify(profileRes.data.data)
-        store.setProfile(profileRes.data.data as UserProfile)
-      }
+      const dbHasProfile = !!profileRes.data
+      const dbHasSessions = !!(sessionsRes.data && sessionsRes.data.length > 0)
+      const dbHasPlan = !!(planRes.data && planRes.data.length > 0)
 
-      // Only overwrite local sessions if Supabase actually has data
-      // (avoids wiping localStorage sessions when tables are newly created)
-      if (sessionsRes.data && sessionsRes.data.length > 0) {
-        const sessions = sessionsRes.data.map(r => r.data as TrainingSession)
+      if (dbHasProfile) {
+        lastSynced.current.profile = JSON.stringify(profileRes.data!.data)
+        store.setProfile(profileRes.data!.data as UserProfile)
+      }
+      if (dbHasSessions) {
+        const sessions = sessionsRes.data!.map(r => r.data as TrainingSession)
         lastSynced.current.sessions = JSON.stringify(sessions)
         store.setSessions(sessions)
       }
+      if (dbHasPlan) {
+        lastSynced.current.plan = JSON.stringify(planRes.data![0].data)
+        store.setPlan(planRes.data![0].data as TrainingPlan)
+      }
 
-      if (planRes.data && planRes.data.length > 0) {
-        lastSynced.current.plan = JSON.stringify(planRes.data[0].data)
-        store.setPlan(planRes.data[0].data as TrainingPlan)
+      // DB is empty but localStorage has data → migrate immediately
+      const localProfile = store.profile
+      const localSessions = store.sessions
+      const localPlan = store.plan
+
+      if (!dbHasProfile && localProfile) {
+        lastSynced.current.profile = JSON.stringify(localProfile)
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          data: localProfile,
+          updated_at: new Date().toISOString(),
+        })
+      }
+      if (!dbHasSessions && localSessions.length > 0) {
+        lastSynced.current.sessions = JSON.stringify(localSessions)
+        await supabase.from('training_sessions').upsert(
+          localSessions.map(s => ({
+            id: s.id,
+            user_id: user.id,
+            data: s,
+            date: s.date,
+            updated_at: new Date().toISOString(),
+          }))
+        )
+      }
+      if (!dbHasPlan && localPlan) {
+        lastSynced.current.plan = JSON.stringify(localPlan)
+        await supabase.from('training_plans').upsert({
+          id: localPlan.id,
+          user_id: user.id,
+          data: localPlan,
+          updated_at: new Date().toISOString(),
+        })
       }
     }
 
@@ -82,7 +115,6 @@ export function useSupabaseSync() {
     const uid = userId.current
     const snapshot = [...store.sessions]
     const timer = setTimeout(async () => {
-      // Upsert all current sessions, then delete any removed ones
       if (snapshot.length > 0) {
         await supabase.from('training_sessions').upsert(
           snapshot.map(s => ({
@@ -94,7 +126,6 @@ export function useSupabaseSync() {
           }))
         )
       }
-      // Delete sessions no longer in the store
       const currentIds = snapshot.map(s => s.id)
       const { data: dbRows } = await supabase
         .from('training_sessions')
