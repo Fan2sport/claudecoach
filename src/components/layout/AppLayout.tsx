@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAppStore } from '@/lib/store'
 import { ConfidenceChip } from '@/components/overview/ConfidenceChip'
@@ -21,8 +20,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { profile, sessions, plan } = useAppStore()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
   useSupabaseSync()
 
   async function handleLogout() {
@@ -73,13 +70,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="flex items-center gap-3">
-            {mounted && primaryObjective && (
-              <div className="hidden sm:block">
+            {primaryObjective && (
+              <div className="hidden sm:block" suppressHydrationWarning>
                 <ConfidenceChip score={confidence.overall} status={confidence.status} />
               </div>
             )}
-            {mounted && profile?.firstName && (
-              <span className="hidden md:block text-sm text-[#a3a3a3]">
+            {profile?.firstName && (
+              <span className="hidden md:block text-sm text-[#a3a3a3]" suppressHydrationWarning>
                 {profile.firstName}
               </span>
             )}
