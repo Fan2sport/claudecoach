@@ -113,14 +113,17 @@ export function CalendarView() {
             >
               →
             </button>
-            {(!plan || sessions.length === 0) && profile?.objectives?.length && (
+            {profile?.objectives?.length ? (
               <button
-                onClick={handleGeneratePlan}
+                onClick={() => {
+                  if (plan && sessions.length > 0 && !confirm('Regénérer efface le plan actuel et toutes les séances. Continuer ?')) return
+                  handleGeneratePlan()
+                }}
                 className="ml-2 px-3 py-1.5 bg-[#ff3b30] hover:bg-[#ff5a52] text-white text-xs font-semibold rounded-lg transition-colors"
               >
-                Générer le plan
+                {plan && sessions.length > 0 ? 'Regénérer le plan' : 'Générer le plan'}
               </button>
-            )}
+            ) : null}
           </div>
         </div>
 
