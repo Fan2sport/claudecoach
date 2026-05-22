@@ -2,12 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAppStore } from '@/lib/store'
 import { ConfidenceChip } from '@/components/overview/ConfidenceChip'
 import { calculateConfidenceScore } from '@/lib/utils'
-import { format } from 'date-fns'
-import { fr } from 'date-fns/locale'
 import { useSupabaseSync } from '@/hooks/useSupabaseSync'
 
 const NAV_ITEMS = [
@@ -22,6 +21,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { profile, sessions, plan } = useAppStore()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
   useSupabaseSync()
 
   async function handleLogout() {
@@ -72,12 +73,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="flex items-center gap-3">
-            {primaryObjective && (
+            {mounted && primaryObjective && (
               <div className="hidden sm:block">
                 <ConfidenceChip score={confidence.overall} status={confidence.status} />
               </div>
             )}
-            {profile?.firstName && (
+            {mounted && profile?.firstName && (
               <span className="hidden md:block text-sm text-[#a3a3a3]">
                 {profile.firstName}
               </span>
