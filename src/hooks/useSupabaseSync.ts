@@ -35,7 +35,9 @@ export function useSupabaseSync() {
         store.setProfile(profileRes.data.data as UserProfile)
       }
 
-      if (sessionsRes.data) {
+      // Only overwrite local sessions if Supabase actually has data
+      // (avoids wiping localStorage sessions when tables are newly created)
+      if (sessionsRes.data && sessionsRes.data.length > 0) {
         const sessions = sessionsRes.data.map(r => r.data as TrainingSession)
         lastSynced.current.sessions = JSON.stringify(sessions)
         store.setSessions(sessions)
