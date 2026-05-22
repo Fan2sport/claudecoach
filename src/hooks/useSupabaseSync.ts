@@ -31,6 +31,7 @@ export function useSupabaseSync() {
       const dbHasProfile = !!profileRes.data
       const dbHasSessions = !!(sessionsRes.data && sessionsRes.data.length > 0)
       const dbHasPlan = !!(planRes.data && planRes.data.length > 0)
+      console.log('[sync] load:', { dbHasProfile, dbHasSessions, dbHasPlan, profileErr: profileRes.error?.message })
 
       if (dbHasProfile) {
         lastSynced.current.profile = JSON.stringify(profileRes.data!.data)
@@ -96,11 +97,12 @@ export function useSupabaseSync() {
     const uid = userId.current
     const snapshot = store.profile
     const timer = setTimeout(async () => {
-      await supabase.from('profiles').upsert({
+      const { error } = await supabase.from('profiles').upsert({
         id: uid,
         data: snapshot,
         updated_at: new Date().toISOString(),
       })
+      console.log('[sync] profile upsert:', error ? `ERROR: ${error.message}` : 'OK')
     }, 800)
     return () => clearTimeout(timer)
   }, [store.profile]) // eslint-disable-line react-hooks/exhaustive-deps
