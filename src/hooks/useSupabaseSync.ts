@@ -13,7 +13,8 @@ export function useSupabaseSync() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user }, error: authErr } = await supabase.auth.getUser()
+      console.log('[sync] auth:', { userId: user?.id ?? 'NULL', authErr: authErr?.message ?? 'none' })
       if (!user) return
       userId.current = user.id
 
