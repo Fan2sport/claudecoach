@@ -51,6 +51,16 @@ export type IntegrationSource =
   | 'apple_health'
   | 'google_fit'
 
+export interface SessionTemplate {
+  id: string
+  name: string
+  sport: Sport
+  type: SessionType
+  duration: number
+  description?: string
+  createdAt: string
+}
+
 export interface UserProfile {
   id: string
   email: string
@@ -69,6 +79,7 @@ export interface UserProfile {
   availableDays: DayAvailability[]
   equipment: string[]
   offPeriods: OffPeriod[]
+  templates?: SessionTemplate[]
   createdAt: string
   updatedAt: string
 }

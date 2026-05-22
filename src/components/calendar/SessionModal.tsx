@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import type { TrainingSession, SessionReport, Sport, DetailedExercise } from '@/types'
+import type { TrainingSession, SessionReport, Sport, DetailedExercise, SessionTemplate } from '@/types'
 import { useAppStore } from '@/lib/store'
 import { SPORT_COLORS, SPORT_ICONS, SPORT_LABELS } from '@/lib/utils'
+import { v4 as uuidv4 } from 'uuid'
 
 const SPORTS_LIST: Sport[] = ['running', 'trail', 'cycling', 'swimming', 'triathlon', 'crossfit', 'hyrox', 'strength', 'powerlifting', 'calisthenics', 'team_sports', 'tennis', 'combat', 'ski', 'climbing', 'hiking', 'mobility', 'rest']
 const WEATHER_OPTIONS = ['Ensoleillé', 'Nuageux', 'Pluie', 'Vent fort', 'Chaud', 'Froid', 'Neige']
@@ -33,7 +34,7 @@ function fmtMin(min?: number): string {
 
 // ─── Modal ───────────────────────────────────────────────────────────────────
 export function SessionModal({ session, open, onClose }: { session: TrainingSession; open: boolean; onClose: () => void }) {
-  const { updateSession, addSession, removeSession } = useAppStore()
+  const { updateSession, addSession, removeSession, addTemplate, profile } = useAppStore()
   const [tab, setTab] = useState<Tab>('details')
   const [editing, setEditing] = useState(!session.id || session.title === 'Nouvelle séance')
   const [alreadyAdded, setAlreadyAdded] = useState(false)
@@ -43,11 +44,58 @@ export function SessionModal({ session, open, onClose }: { session: TrainingSess
   const [report, setReport] = useState<Partial<SessionReport>>(session.report ?? {})
   const [coachQuestion, setCoachQuestion] = useState('')
   const [saved, setSaved] = useState(false)
+  const [prBanner, setPrBanner] = useState<string | null>(null)
+  const [templateSaved, setTemplateSaved] = useState(false)
 
   if (!open) return null
 
   const color = SPORT_COLORS[sport] ?? '#a3a3a3'
   const isNew = !session.createdAt || session.title === 'Nouvelle séance'
+
+  function detectPR(): string | null {
+    if (!report.completedAt) return null
+    if (!profile) return null
+    const sportProfile = profile.sports.find(s => s.sport === sport)
+    if (!sportProfile) return null
+    const prs = sportProfile.prs
+
+    if ((sport === 'running' || sport === 'trail') && report.avgPace && report.distance) {
+      const dist = report.distance
+      const paceStr = report.avgPace
+      const [m, s] = paceStr.split(':').map(Number)
+      const paceSec = (m || 0) * 60 + (s || 0)
+      if (paceSec <= 0) return null
+
+      const totalMin = Math.round(dist * paceSec / 60)
+      const hh = Math.floor(totalMin / 60)
+      const mm = totalMin % 60
+      const timeStr = hh > 0 ? `${hh}h${String(mm).padStart(2, '0')}` : `${mm}min`
+
+      if (dist >= 4.8 && dist <= 5.2 && !prs.run5k) return `Record sur 5km potentiel : ${timeStr} (${paceStr}/km)`
+      if (dist >= 9.5 && dist <= 10.5 && !prs.run10k) return `Record sur 10km potentiel : ${timeStr} (${paceStr}/km)`
+      if (dist >= 20.5 && dist <= 21.5 && !prs.runHalf) return `Record semi-marathon potentiel : ${timeStr} (${paceStr}/km)`
+      if (dist >= 41.5 && dist <= 42.5 && !prs.runMarathon) return `Record marathon potentiel : ${timeStr} (${paceStr}/km)`
+
+      const parseTime = (t?: string): number => {
+        if (!t) return Infinity
+        const p = t.replace('h', ':').split(':').map(Number)
+        return p.length === 2 ? p[0] * 60 + p[1] : p[0]
+      }
+      if (dist >= 4.8 && dist <= 5.2 && totalMin < parseTime(prs.run5k)) return `Nouveau record 5km ! ${timeStr} 🏆`
+      if (dist >= 9.5 && dist <= 10.5 && totalMin < parseTime(prs.run10k)) return `Nouveau record 10km ! ${timeStr} 🏆`
+      if (dist >= 20.5 && dist <= 21.5 && totalMin < parseTime(prs.runHalf)) return `Nouveau record semi-marathon ! ${timeStr} 🏆`
+      if (dist >= 41.5 && dist <= 42.5 && totalMin < parseTime(prs.runMarathon)) return `Nouveau record marathon ! ${timeStr} 🏆`
+    }
+
+    if (sport === 'cycling' && report.avgPower) {
+      const currentFTP = prs.cyclingFTP ?? profile.ftp
+      if (currentFTP && report.avgPower > currentFTP * 0.95) {
+        return `Puissance élevée : ${report.avgPower}W — potentiellement proche de ton FTP ! 💪`
+      }
+    }
+
+    return null
+  }
 
   function saveSession() {
     const updated: TrainingSession = {
@@ -65,9 +113,26 @@ export function SessionModal({ session, open, onClose }: { session: TrainingSess
     } else {
       updateSession(session.id, updated)
     }
+    const pr = detectPR()
+    if (pr) setPrBanner(pr)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
     setEditing(false)
+  }
+
+  function saveAsTemplate() {
+    const tpl: SessionTemplate = {
+      id: uuidv4(),
+      name: title,
+      sport,
+      type: session.type,
+      duration: session.plannedDuration ?? 60,
+      description,
+      createdAt: new Date().toISOString(),
+    }
+    addTemplate(tpl)
+    setTemplateSaved(true)
+    setTimeout(() => setTemplateSaved(false), 2000)
   }
 
   function markComplete() {
@@ -289,22 +354,46 @@ Question: ${coachQuestion || 'Analyse cette séance et donne-moi des conseils po
           )}
         </div>
 
+        {/* PR banner */}
+        {prBanner && (
+          <div className="mx-4 mb-0 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-start gap-2">
+            <span className="text-lg flex-shrink-0">🏆</span>
+            <div className="flex-1">
+              <p className="text-yellow-400 text-xs font-medium">{prBanner}</p>
+              <p className="text-[#a3a3a3] text-[10px] mt-0.5">Tu peux mettre à jour tes records dans Configuration → Sports</p>
+            </div>
+            <button onClick={() => setPrBanner(null)} className="text-[#5a5a5a] hover:text-white text-sm">×</button>
+          </div>
+        )}
+
         {/* Footer */}
-        <div className="p-4 border-t border-[#262626] flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="p-4 border-t border-[#262626] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {session.completed && <span className="flex items-center gap-1 text-xs text-green-400"><span>✓</span> Effectuée</span>}
             {saved && <span className="text-xs text-green-400">Sauvegardé ✓</span>}
+            {templateSaved && <span className="text-xs text-blue-400">Modèle sauvegardé ✓</span>}
           </div>
-          {(editing || isNew) && (
-            <button onClick={saveSession} className="px-4 py-2 bg-[#ff3b30] hover:bg-[#ff5a52] text-white text-sm font-semibold rounded-lg transition-colors">
-              {isNew && !alreadyAdded ? 'Créer la séance' : 'Sauvegarder'}
-            </button>
-          )}
-          {!editing && tab === 'report' && (
-            <button onClick={saveSession} className="px-4 py-2 bg-[#ff3b30] hover:bg-[#ff5a52] text-white text-sm font-semibold rounded-lg transition-colors">
-              Sauvegarder
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {!isNew && (
+              <button
+                onClick={saveAsTemplate}
+                className="px-3 py-1.5 text-xs text-[#a3a3a3] border border-[#262626] hover:text-white hover:border-[#404040] rounded-lg transition-colors"
+                title="Sauvegarder comme modèle réutilisable"
+              >
+                + Modèle
+              </button>
+            )}
+            {(editing || isNew) && (
+              <button onClick={saveSession} className="px-4 py-2 bg-[#ff3b30] hover:bg-[#ff5a52] text-white text-sm font-semibold rounded-lg transition-colors">
+                {isNew && !alreadyAdded ? 'Créer la séance' : 'Sauvegarder'}
+              </button>
+            )}
+            {!editing && tab === 'report' && (
+              <button onClick={saveSession} className="px-4 py-2 bg-[#ff3b30] hover:bg-[#ff5a52] text-white text-sm font-semibold rounded-lg transition-colors">
+                Sauvegarder
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

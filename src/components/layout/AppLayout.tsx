@@ -7,6 +7,7 @@ import { useAppStore } from '@/lib/store'
 import { ConfidenceChip } from '@/components/overview/ConfidenceChip'
 import { calculateConfidenceScore } from '@/lib/utils'
 import { useSupabaseSync } from '@/hooks/useSupabaseSync'
+import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 
 const NAV_ITEMS = [
   { href: '/calendar', label: 'Calendrier', icon: '📅' },
@@ -42,6 +43,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const daysRemaining = primaryObjective ? Math.max(0, Math.round((new Date(primaryObjective.targetDate).getTime() - now.getTime()) / 86400000)) : 365
 
   const confidence = calculateConfidenceScore({ completedSessions, plannedSessions, actualVolume, targetVolume, qualitySessions, plannedQuality, daysRemaining, totalDays })
+
+  if (!profile) return <OnboardingWizard />
 
   return (
     <div className="flex flex-col min-h-screen gradient-bg">

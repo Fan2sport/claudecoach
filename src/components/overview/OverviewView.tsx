@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { useAppStore } from '@/lib/store'
 import { calculateConfidenceScore, SPORT_COLORS, SPORT_LABELS, SPORT_ICONS, formatDuration } from '@/lib/utils'
-import { format, startOfWeek, addDays, subWeeks, getWeek } from 'date-fns'
+import { format, startOfWeek, endOfWeek, addDays, subWeeks, getWeek } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -102,8 +102,19 @@ export function OverviewView() {
   }, [sessions])
 
   const thisWeekStart = startOfWeek(now, { weekStartsOn: 1 })
-  const thisWeekSessions = sessions.filter(s => new Date(s.date) >= thisWeekStart && new Date(s.date) <= addDays(thisWeekStart, 6))
+  const thisWeekEnd = endOfWeek(now, { weekStartsOn: 1 })
+  const lastWeekStart = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 })
+  const lastWeekEnd = endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 })
+
+  const thisWeekSessions = sessions.filter(s => new Date(s.date) >= thisWeekStart && new Date(s.date) <= thisWeekEnd)
+  const lastWeekSessions = sessions.filter(s => new Date(s.date) >= lastWeekStart && new Date(s.date) <= lastWeekEnd)
   const thisWeekCompleted = thisWeekSessions.filter(s => s.completed).length
+  const thisWeekVolume = thisWeekSessions.filter(s => s.completed).reduce((acc, s) => acc + (s.report?.duration ?? s.plannedDuration ?? 0), 0)
+  const lastWeekVolume = lastWeekSessions.filter(s => s.completed).reduce((acc, s) => acc + (s.report?.duration ?? s.plannedDuration ?? 0), 0)
+  const volumeDelta = lastWeekVolume > 0 ? Math.round(((thisWeekVolume - lastWeekVolume) / lastWeekVolume) * 100) : null
+
+  const bestSessionThisWeek = thisWeekSessions.filter(s => s.completed && s.report?.rpe).sort((a, b) => (b.report!.rpe! - a.report!.rpe!)).at(0)
+  const nextSession = sessions.filter(s => !s.completed && new Date(s.date) >= now).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).at(0)
 
   const CRITERIA = [
     { label: 'Régularité', weight: 30, score: confidence.regularity, desc: `${completedSessions}/${plannedSessions} séances effectuées` },
@@ -190,6 +201,54 @@ export function OverviewView() {
             <div className="text-[#5a5a5a] text-xs">{stat.unit}</div>
           </div>
         ))}
+      </div>
+
+      {/* Weekly summary */}
+      <div className="bg-[#141414] border border-[#262626] rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-medium text-sm">Résumé de la semaine</h3>
+          <span className="text-[#5a5a5a] text-xs font-data">
+            S{getWeek(thisWeekStart, { weekStartsOn: 1 })} — {format(thisWeekStart, 'd', { locale: fr })}–{format(thisWeekEnd, 'd MMM', { locale: fr })}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-[#0a0a0a] rounded-xl p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-[#a3a3a3] uppercase tracking-wide mb-1.5">Séances</div>
+            <div className="font-data text-xl font-bold text-white">{thisWeekCompleted}/{thisWeekSessions.length}</div>
+            <div className="text-[10px] text-[#5a5a5a] mt-0.5">effectuées</div>
+          </div>
+          <div className="bg-[#0a0a0a] rounded-xl p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-[#a3a3a3] uppercase tracking-wide mb-1.5">Volume</div>
+            <div className="font-data text-xl font-bold text-white">{formatDuration(thisWeekVolume)}</div>
+            {volumeDelta !== null && (
+              <div className={`text-[10px] mt-0.5 font-data ${volumeDelta >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {volumeDelta >= 0 ? '+' : ''}{volumeDelta}% vs S-1
+              </div>
+            )}
+          </div>
+          <div className="bg-[#0a0a0a] rounded-xl p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-[#a3a3a3] uppercase tracking-wide mb-1.5">Meilleure séance</div>
+            {bestSessionThisWeek ? (
+              <>
+                <div className="text-xs text-white font-medium truncate">{SPORT_ICONS[bestSessionThisWeek.sport]} {bestSessionThisWeek.title}</div>
+                <div className="text-[10px] text-[#5a5a5a] mt-0.5 font-data">RPE {bestSessionThisWeek.report!.rpe}/10</div>
+              </>
+            ) : (
+              <div className="text-[10px] text-[#404040] mt-1">Aucune encore</div>
+            )}
+          </div>
+          <div className="bg-[#0a0a0a] rounded-xl p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-[#a3a3a3] uppercase tracking-wide mb-1.5">Prochaine séance</div>
+            {nextSession ? (
+              <>
+                <div className="text-xs text-white font-medium truncate">{SPORT_ICONS[nextSession.sport]} {nextSession.title}</div>
+                <div className="text-[10px] text-[#5a5a5a] mt-0.5 font-data">{format(new Date(nextSession.date), 'EEE d MMM', { locale: fr })}</div>
+              </>
+            ) : (
+              <div className="text-[10px] text-[#404040] mt-1">Aucune prévue</div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Charts row */}
