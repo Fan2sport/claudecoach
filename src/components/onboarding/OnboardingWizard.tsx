@@ -79,7 +79,7 @@ export function OnboardingWizard() {
   // Step 4
   const [availDays, setAvailDays] = useState<DayAvailability[]>([])
 
-  const { setProfile, setSessions, setPlan } = useAppStore()
+  const { setProfile, setSessions, setPlan, sessions: existingSessions } = useAppStore()
 
   useEffect(() => {
     createClient().auth.getUser().then(({ data: { user } }) => {
@@ -151,8 +151,12 @@ export function OnboardingWizard() {
     if (objDate && profile.objectives.length > 0) {
       try {
         const plan = generatePlan(profile)
+        const completed = existingSessions.filter(s => s.completed)
+        const completedKeys = new Set(completed.map(s => `${s.date}|${s.sport}`))
+        const fresh = plan.sessions.filter(s => !completedKeys.has(`${s.date}|${s.sport}`))
+        const merged = [...completed, ...fresh].sort((a, b) => a.date.localeCompare(b.date))
         setPlan(plan)
-        setSessions(plan.sessions)
+        setSessions(merged)
       } catch {
         // ignore plan errors
       }
