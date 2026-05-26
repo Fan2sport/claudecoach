@@ -10,6 +10,7 @@ import { AvailabilitySection } from './sections/AvailabilitySection'
 import { CoachSection } from './sections/CoachSection'
 import { IntegrationsSection } from './sections/IntegrationsSection'
 import { OffPeriodSection } from './sections/OffPeriodSection'
+import { StrengthProgramSection } from './sections/StrengthProgramSection'
 
 const SECTIONS = [
   { id: 'profile', label: '01 — Profil', icon: '👤' },
@@ -20,6 +21,7 @@ const SECTIONS = [
   { id: 'coach', label: '06 — Coach IA', icon: '🤖' },
   { id: 'integrations', label: '07 — Intégrations', icon: '🔗' },
   { id: 'offperiod', label: '08 — Indisponibilités', icon: '✈️' },
+  { id: 'strength', label: '09 — Programme muscu', icon: '💪' },
 ]
 
 export function ConfigView() {
@@ -66,6 +68,7 @@ export function ConfigView() {
             {activeSection === 'coach' && <CoachSection />}
             {activeSection === 'integrations' && <IntegrationsSection />}
             {activeSection === 'offperiod' && <OffPeriodSection />}
+            {activeSection === 'strength' && <StrengthProgramSection />}
           </div>
         </div>
       </div>

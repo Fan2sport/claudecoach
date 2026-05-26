@@ -116,6 +116,22 @@ export function OverviewView() {
   const bestSessionThisWeek = thisWeekSessions.filter(s => s.completed && s.report?.rpe).sort((a, b) => (b.report!.rpe! - a.report!.rpe!)).at(0)
   const nextSession = sessions.filter(s => !s.completed && new Date(s.date) >= now).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).at(0)
 
+  // Adaptive plan signals
+  const recentWithRpe = sessions
+    .filter(s => s.completed && s.report?.rpe != null)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 7)
+  const avgRpe = recentWithRpe.length >= 3
+    ? Math.round((recentWithRpe.reduce((acc, s) => acc + s.report!.rpe!, 0) / recentWithRpe.length) * 10) / 10
+    : null
+  const recentPast = sessions.filter(s => {
+    const d = new Date(s.date)
+    return d <= now && d >= subWeeks(now, 4) && s.sport !== 'rest'
+  })
+  const recentMissedPct = recentPast.length > 0
+    ? Math.round((recentPast.filter(s => !s.completed).length / recentPast.length) * 100)
+    : 0
+
   const CRITERIA = [
     { label: 'Régularité', weight: 30, score: confidence.regularity, desc: `${completedSessions}/${plannedSessions} séances effectuées` },
     { label: 'Volume', weight: 25, score: confidence.volume, desc: `${Math.round(actualVolume * 10) / 10}/${Math.round(targetVolume * 10) / 10} h cumulées` },
@@ -250,6 +266,44 @@ export function OverviewView() {
           </div>
         </div>
       </div>
+
+      {/* Adaptive plan hints */}
+      {(avgRpe != null || recentMissedPct > 0) && (() => {
+        type Hint = { type: 'warn' | 'ok' | 'info'; icon: string; title: string; body: string }
+        const hints: Hint[] = []
+        if (avgRpe != null && avgRpe >= 8.0) {
+          hints.push({ type: 'warn', icon: '🔴', title: 'Fatigue détectée', body: `RPE moyen ${avgRpe}/10 sur tes 7 dernières séances — considère de réduire l'intensité ou d'ajouter une séance de récupération.` })
+        }
+        if (avgRpe != null && avgRpe <= 5.0) {
+          hints.push({ type: 'ok', icon: '🟢', title: 'Tu peux augmenter la charge', body: `RPE moyen ${avgRpe}/10 — tes séances semblent confortables. C'est le bon moment pour hausser le volume ou l'intensité.` })
+        }
+        if (recentMissedPct >= 40) {
+          hints.push({ type: 'info', icon: '📅', title: 'Régularité à améliorer', body: `${recentMissedPct}% de tes séances des 4 dernières semaines n'ont pas été effectuées. Tente de réduire le nombre de jours ou l'intensité pour mieux adhérer au plan.` })
+        }
+        if (hints.length === 0) return null
+        return (
+          <div className="space-y-2">
+            {hints.map((h, i) => (
+              <div
+                key={i}
+                className={`rounded-xl p-3.5 border flex items-start gap-3 ${
+                  h.type === 'warn' ? 'border-red-500/30 bg-red-500/5' :
+                  h.type === 'ok' ? 'border-green-500/30 bg-green-500/5' :
+                  'border-yellow-500/30 bg-yellow-500/5'
+                }`}
+              >
+                <span className="text-xl flex-shrink-0">{h.icon}</span>
+                <div>
+                  <div className={`text-sm font-semibold ${h.type === 'warn' ? 'text-red-400' : h.type === 'ok' ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {h.title}
+                  </div>
+                  <div className="text-xs text-[#a3a3a3] mt-0.5 leading-relaxed">{h.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

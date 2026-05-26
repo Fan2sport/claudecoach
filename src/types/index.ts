@@ -1,3 +1,47 @@
+export type MuscleGroup = 'chest' | 'back' | 'shoulders' | 'biceps' | 'triceps' | 'quads' | 'hamstrings' | 'glutes' | 'calves' | 'core'
+export type StrengthGoal = 'hypertrophy' | 'strength' | 'endurance' | 'power'
+export type StrengthSplit = 'full_body' | 'push_pull' | 'push_pull_legs' | 'upper_lower'
+
+export interface PlannedExercise {
+  id: string
+  name: string
+  muscleGroup?: MuscleGroup
+  sets: number
+  reps: string       // "8-12" or "5"
+  weightKg?: number  // suggested weight
+  rpe?: number
+  restSec?: number
+  notes?: string
+}
+
+export interface PlannedRunBlock {
+  id: string
+  type: 'warmup' | 'easy' | 'tempo' | 'intervals' | 'cooldown' | 'custom'
+  durationMin?: number
+  distanceKm?: number
+  pace?: string
+  hrZone?: number
+  reps?: number
+  repDurationMin?: number
+  repDistanceM?: number
+  repPace?: string
+  recoveryMin?: number
+  notes?: string
+}
+
+export interface PlannedWorkout {
+  runBlocks?: PlannedRunBlock[]
+  exercises?: PlannedExercise[]
+  coachNotes?: string
+  focusLabel?: string  // e.g. "Push — Hypertrophie"
+}
+
+export interface StrengthProgram {
+  split: StrengthSplit
+  goal: StrengthGoal
+  sessionsPerWeek: number
+}
+
 export type Sport =
   | 'running'
   | 'trail'
@@ -80,6 +124,7 @@ export interface UserProfile {
   equipment: string[]
   offPeriods: OffPeriod[]
   templates?: SessionTemplate[]
+  strengthProgram?: StrengthProgram
   createdAt: string
   updatedAt: string
 }
@@ -152,6 +197,7 @@ export interface TrainingSession {
   plannedDuration?: number
   plannedDistance?: number
   targets?: SessionTargets
+  plannedWorkout?: PlannedWorkout
   completed: boolean
   importedFrom?: IntegrationSource
   report?: SessionReport

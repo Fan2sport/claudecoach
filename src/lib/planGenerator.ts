@@ -1,6 +1,7 @@
 import { addDays, differenceInDays, format, startOfWeek } from 'date-fns'
-import type { UserProfile, TrainingSession, TrainingPlan, PlanPhase, TrainingPhase, Sport, SessionType } from '@/types'
+import type { UserProfile, TrainingSession, TrainingPlan, PlanPhase, TrainingPhase, Sport, SessionType, PlannedWorkout, PlannedRunBlock } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
+import { generateStrengthWorkout, getSessionFocus, FOCUS_LABELS, GOAL_LABELS } from './strengthPrograms'
 
 type IntensityLabel = 'easy' | 'quality' | 'long' | 'recovery'
 
@@ -192,6 +193,148 @@ function pickTemplate(sport: Sport, intensity: IntensityLabel): Tpl {
   return list[Math.floor(Math.random() * list.length)]
 }
 
+// ── Planned workout builders ──────────────────────────────────────────────────
+
+function id() { return uuidv4() }
+
+function generateRunWorkout(type: SessionType, durationMin: number): PlannedWorkout {
+  switch (type) {
+    case 'intervals': {
+      const wu = Math.round(durationMin * 0.22)
+      const cd = Math.round(durationMin * 0.15)
+      const blocks: PlannedRunBlock[] = [
+        { id: id(), type: 'warmup', durationMin: wu, notes: 'Footing EF, mise en route progressive' },
+        { id: id(), type: 'intervals', reps: 8, repDistanceM: 400, repPace: '4:10', recoveryMin: 1.5, notes: '100-105% VMA, allure soutenue' },
+        { id: id(), type: 'cooldown', durationMin: cd, notes: 'Retour au calme, footing très léger' },
+      ]
+      return { runBlocks: blocks }
+    }
+    case 'vo2max': {
+      const wu = Math.round(durationMin * 0.25)
+      const cd = Math.round(durationMin * 0.18)
+      return {
+        runBlocks: [
+          { id: id(), type: 'warmup', durationMin: wu, notes: 'Footing EF + 3 accélérations progressives' },
+          { id: id(), type: 'intervals', reps: 5, repDistanceM: 1000, repDurationMin: 4, repPace: '4:00', recoveryMin: 2.5, notes: '95-100% VMA' },
+          { id: id(), type: 'cooldown', durationMin: cd, notes: 'Footing léger, récupération active' },
+        ],
+      }
+    }
+    case 'tempo': {
+      const wu = Math.round(durationMin * 0.25)
+      const cd = Math.round(durationMin * 0.20)
+      const main = durationMin - wu - cd
+      return {
+        runBlocks: [
+          { id: id(), type: 'warmup', durationMin: wu, notes: 'Footing EF progressif' },
+          { id: id(), type: 'tempo', durationMin: main, hrZone: 4, pace: '4:30', notes: 'Allure seuil — confortable mais soutenu, pas de conversation' },
+          { id: id(), type: 'cooldown', durationMin: cd, notes: 'Très léger, récupération active' },
+        ],
+      }
+    }
+    case 'long_run': {
+      return {
+        runBlocks: [
+          { id: id(), type: 'warmup', durationMin: 10, notes: 'Mise en route très lente' },
+          { id: id(), type: 'easy', durationMin: durationMin - 10, hrZone: 2, notes: 'Allure EF / marathon — conversation possible durant toute la sortie' },
+        ],
+      }
+    }
+    case 'recovery': {
+      return {
+        runBlocks: [
+          { id: id(), type: 'easy', durationMin, hrZone: 1, notes: 'Ultra-léger, FC < 130 bpm, récupération active uniquement' },
+        ],
+      }
+    }
+    default: { // easy_run
+      const wu = Math.min(10, Math.round(durationMin * 0.18))
+      return {
+        runBlocks: [
+          { id: id(), type: 'warmup', durationMin: wu, notes: 'Mise en route légère' },
+          { id: id(), type: 'easy', durationMin: durationMin - wu, hrZone: 2, notes: 'Endurance fondamentale — allure conversation, Zone 2' },
+        ],
+      }
+    }
+  }
+}
+
+function generateTrailWorkout(type: SessionType, durationMin: number): PlannedWorkout {
+  if (type === 'intervals') {
+    const wu = Math.round(durationMin * 0.20)
+    const cd = Math.round(durationMin * 0.15)
+    return {
+      runBlocks: [
+        { id: id(), type: 'warmup', durationMin: wu, notes: 'Footing plat, mise en route' },
+        { id: id(), type: 'intervals', reps: 6, repDurationMin: 3, notes: 'Montées à 80-90% FC max — marche active en descente' },
+        { id: id(), type: 'cooldown', durationMin: cd, notes: 'Descente très lente, récup active' },
+      ],
+    }
+  }
+  if (type === 'long_run') {
+    return {
+      runBlocks: [
+        { id: id(), type: 'easy', durationMin, hrZone: 2, notes: 'Sortie nature avec D+ — marche autorisée en montée, poussez en descente' },
+      ],
+    }
+  }
+  return {
+    runBlocks: [
+      { id: id(), type: 'easy', durationMin, hrZone: 2, notes: 'Trail EF — terrain varié, allure confortable' },
+    ],
+  }
+}
+
+function generateCyclingWorkout(type: SessionType, durationMin: number): PlannedWorkout {
+  if (type === 'intervals' || type === 'vo2max') {
+    const wu = Math.round(durationMin * 0.20)
+    const cd = Math.round(durationMin * 0.15)
+    return {
+      runBlocks: [
+        { id: id(), type: 'warmup', durationMin: wu, notes: 'Zone 1-2, cadence 90rpm, montée progressive' },
+        { id: id(), type: 'intervals', reps: type === 'vo2max' ? 5 : 4, repDurationMin: type === 'vo2max' ? 5 : 10, notes: type === 'vo2max' ? '110-120% FTP' : '100% FTP — effort soutenu, cadence libre' },
+        { id: id(), type: 'cooldown', durationMin: cd, notes: 'Zone 1, cadence élevée, récupération active' },
+      ],
+    }
+  }
+  if (type === 'tempo') {
+    return {
+      runBlocks: [
+        { id: id(), type: 'warmup', durationMin: 15, notes: 'Zone 2, cadence 85-90rpm' },
+        { id: id(), type: 'tempo', durationMin: durationMin - 25, notes: 'Zone 3-4 (85-95% FTP) — effort continu, cadence 85-95rpm' },
+        { id: id(), type: 'cooldown', durationMin: 10, notes: 'Zone 1, très léger' },
+      ],
+    }
+  }
+  return {
+    runBlocks: [
+      { id: id(), type: 'easy', durationMin, hrZone: 2, notes: 'Zone 2 — cadence 85-95rpm, conversation possible, endurance aérobie' },
+    ],
+  }
+}
+
+function buildPlannedWorkout(sport: Sport, type: SessionType, durationMin: number, profile: UserProfile, strengthDayIndex: number): PlannedWorkout | undefined {
+  // Running / Trail / Cycling
+  if (sport === 'running') return generateRunWorkout(type, durationMin)
+  if (sport === 'trail') return generateTrailWorkout(type, durationMin)
+  if (sport === 'cycling') return generateCyclingWorkout(type, durationMin)
+
+  // Strength sports — use configured program or defaults
+  if (sport === 'strength' || sport === 'powerlifting' || sport === 'calisthenics') {
+    const prog = profile.strengthProgram
+    const split = prog?.split ?? 'push_pull_legs'
+    const goal = prog?.goal ?? 'hypertrophy'
+    const focus = getSessionFocus(split, strengthDayIndex)
+    const focusLabel = `${FOCUS_LABELS[focus]} — ${GOAL_LABELS[goal]}`
+    const exercises = generateStrengthWorkout(split, goal, strengthDayIndex)
+    return { exercises, focusLabel }
+  }
+
+  return undefined
+}
+
+// ── Phase & volume helpers ────────────────────────────────────────────────────
+
 function getPhases(startDate: Date, endDate: Date): PlanPhase[] {
   const totalDays = differenceInDays(endDate, startDate)
   return [
@@ -317,6 +460,8 @@ export function generatePlan(profile: UserProfile): TrainingPlan {
       sportIntensities[sport] = assignIntensities(count, currentPhase, isDeload)
     })
 
+    let strengthDayIndex = 0
+
     for (const { date, sports, isOff } of weekDays) {
       const dateStr = format(date, 'yyyy-MM-dd')
       if (isOff) {
@@ -341,6 +486,10 @@ export function generatePlan(profile: UserProfile): TrainingPlan {
         sportIdx[sport] = idx + 1
         const intensity = sportIntensities[sport]?.[idx] ?? 'easy'
         const tpl = pickTemplate(sport, intensity)
+        const plannedDuration = Math.round(tpl.durationMin * volumeMultiplier)
+        const isStrengthSport = sport === 'strength' || sport === 'powerlifting' || sport === 'calisthenics'
+        const plannedWorkout = buildPlannedWorkout(sport, tpl.type, plannedDuration, profile, strengthDayIndex)
+        if (isStrengthSport) strengthDayIndex++
         sessions.push({
           id: uuidv4(),
           userId: profile.id,
@@ -350,7 +499,8 @@ export function generatePlan(profile: UserProfile): TrainingPlan {
           phase: currentPhase,
           title: tpl.title,
           description: tpl.description,
-          plannedDuration: Math.round(tpl.durationMin * volumeMultiplier),
+          plannedDuration,
+          plannedWorkout,
           completed: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),

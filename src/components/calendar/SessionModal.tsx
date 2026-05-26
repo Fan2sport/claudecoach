@@ -32,16 +32,63 @@ function fmtMin(min?: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+// ─── Pre-fill report from planned workout ────────────────────────────────────
+function buildInitialReport(session: TrainingSession): Partial<SessionReport> {
+  if (session.report) return session.report
+  const pw = session.plannedWorkout
+  if (!pw) return {}
+
+  if (pw.runBlocks && pw.runBlocks.length > 0) {
+    const warmup = pw.runBlocks.find(b => b.type === 'warmup')
+    const cooldown = pw.runBlocks.find(b => b.type === 'cooldown')
+    const intervals = pw.runBlocks.find(b => b.type === 'intervals')
+    const tempo = pw.runBlocks.find(b => b.type === 'tempo')
+    const prefill: Partial<SessionReport> = {}
+    if (warmup?.durationMin) prefill.warmupMin = warmup.durationMin
+    if (cooldown?.durationMin) prefill.cooldownMin = cooldown.durationMin
+    if (intervals) {
+      prefill.sessionStructure = 'intervals'
+      if (intervals.reps) prefill.intervalReps = intervals.reps
+      if (intervals.repDurationMin) prefill.intervalDurationMin = intervals.repDurationMin
+      if (intervals.repPace) prefill.intervalPace = intervals.repPace
+      if (intervals.recoveryMin) prefill.intervalRecoveryMin = intervals.recoveryMin
+    } else if (tempo) {
+      prefill.sessionStructure = 'tempo'
+      if (tempo.durationMin) prefill.intervalDurationMin = tempo.durationMin
+      if (tempo.pace) prefill.intervalPace = tempo.pace
+    } else {
+      prefill.sessionStructure = 'endurance'
+    }
+    if (session.plannedDuration) prefill.duration = session.plannedDuration
+    return prefill
+  }
+
+  if (pw.exercises && pw.exercises.length > 0) {
+    const detailedExercises: DetailedExercise[] = pw.exercises.map(ex => ({
+      id: ex.id,
+      name: ex.name,
+      sets: ex.sets,
+      reps: parseInt(ex.reps.split('-')[0]) || undefined,
+      weightKg: ex.weightKg,
+    }))
+    const base: Partial<SessionReport> = { detailedExercises }
+    if (session.plannedDuration) base.duration = session.plannedDuration
+    return base
+  }
+
+  return {}
+}
+
 // ─── Modal ───────────────────────────────────────────────────────────────────
 export function SessionModal({ session, open, onClose }: { session: TrainingSession; open: boolean; onClose: () => void }) {
-  const { updateSession, addSession, removeSession, addTemplate, profile } = useAppStore()
+  const { updateSession, addSession, removeSession, addTemplate, profile, sessions } = useAppStore()
   const [tab, setTab] = useState<Tab>('details')
   const [editing, setEditing] = useState(!session.id || session.title === 'Nouvelle séance')
   const [alreadyAdded, setAlreadyAdded] = useState(false)
   const [title, setTitle] = useState(session.title)
   const [description, setDescription] = useState(session.description ?? '')
   const [sport, setSport] = useState<Sport>(session.sport)
-  const [report, setReport] = useState<Partial<SessionReport>>(session.report ?? {})
+  const [report, setReport] = useState<Partial<SessionReport>>(buildInitialReport(session))
   const [coachQuestion, setCoachQuestion] = useState('')
   const [saved, setSaved] = useState(false)
   const [prBanner, setPrBanner] = useState<string | null>(null)
@@ -285,6 +332,10 @@ Question: ${coachQuestion || 'Analyse cette séance et donne-moi des conseils po
                   <div className="text-white text-sm capitalize">{session.phase}</div>
                 </div>
               )}
+
+              <PlannedWorkoutDisplay session={session} />
+
+              <SimilarSessions current={session} sessions={sessions} />
 
               <div className="flex gap-2 pt-1">
                 {!session.completed && !isNew && (
@@ -906,11 +957,52 @@ function SwimReportForm({ report, onChange }: { report: Partial<SessionReport>; 
   )
 }
 
+// ─── Strength exercise row (report form) ─────────────────────────────────────
+function StrengthExRow({ exercise, onChange }: {
+  exercise: DetailedExercise
+  onChange: (u: Partial<DetailedExercise>) => void
+}) {
+  return (
+    <div className="bg-[#0a0a0a] border border-[#333] rounded-lg p-2.5">
+      <div className="text-xs font-medium text-white mb-2">{exercise.name}</div>
+      <div className="grid grid-cols-3 gap-1.5">
+        <div>
+          <p className="text-[9px] text-[#a3a3a3] uppercase tracking-wide mb-0.5">Séries</p>
+          <SmallInput value={exercise.sets} onChange={v => onChange({ sets: parseInt(v) })} placeholder="4" type="number" />
+        </div>
+        <div>
+          <p className="text-[9px] text-[#a3a3a3] uppercase tracking-wide mb-0.5">Reps</p>
+          <SmallInput value={exercise.reps} onChange={v => onChange({ reps: parseInt(v) })} placeholder="10" type="number" />
+        </div>
+        <div>
+          <p className="text-[9px] text-[#a3a3a3] uppercase tracking-wide mb-0.5">Poids (kg)</p>
+          <SmallInput value={exercise.weightKg} onChange={v => onChange({ weightKg: parseFloat(v) })} placeholder="60" type="number" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Strength ────────────────────────────────────────────────────────────────
 function StrengthReportForm({ report, onChange }: { report: Partial<SessionReport>; onChange: (r: Partial<SessionReport>) => void }) {
   const set = (key: keyof SessionReport, val: string | number | undefined) => onChange({ ...report, [key]: val })
+  const exercises: DetailedExercise[] = report.detailedExercises ?? []
+
+  function updateExercise(id: string, updates: Partial<DetailedExercise>) {
+    onChange({ ...report, detailedExercises: exercises.map(e => e.id === id ? { ...e, ...updates } : e) })
+  }
+
   return (
     <div className="space-y-3">
+      {exercises.length > 0 && (
+        <SectionBox title="Exercices réalisés">
+          <div className="space-y-2">
+            {exercises.map(ex => (
+              <StrengthExRow key={ex.id} exercise={ex} onChange={updates => updateExercise(ex.id, updates)} />
+            ))}
+          </div>
+        </SectionBox>
+      )}
       <Field label="Durée (hh:mm:ss)">
         <Input value={fmtMin(report.duration)} onChange={v => set('duration', parseHMS(v))} placeholder="01:00:00" />
       </Field>
@@ -963,6 +1055,176 @@ function GenericReportForm({ report, onChange }: { report: Partial<SessionReport
       <RpeSlider value={report.rpe} onChange={v => set('rpe', v)} />
       <NotesField value={report.notes} onChange={v => set('notes', v)} />
       <CompletedCheckbox value={report.completedAt} onChange={v => set('completedAt', v)} />
+    </div>
+  )
+}
+
+// ─── Planned workout display ─────────────────────────────────────────────────
+const RUN_BLOCK_LABELS: Record<string, string> = {
+  warmup: 'Échauffement', easy: 'Endurance', tempo: 'Tempo / Seuil',
+  intervals: 'Intervalles', cooldown: 'Récupération', custom: 'Bloc libre',
+}
+const RUN_BLOCK_COLORS: Record<string, string> = {
+  warmup: '#f59e0b', easy: '#22c55e', tempo: '#3b82f6',
+  intervals: '#ff3b30', cooldown: '#8b5cf6', custom: '#a3a3a3',
+}
+const MUSCLE_SHORT: Record<string, string> = {
+  chest: 'Pecto', back: 'Dos', shoulders: 'Épaules', biceps: 'Biceps',
+  triceps: 'Triceps', quads: 'Cuisses', hamstrings: 'Ischio',
+  glutes: 'Fessiers', calves: 'Mollets', core: 'Abdos',
+}
+
+function PlannedWorkoutDisplay({ session }: { session: TrainingSession }) {
+  const pw = session.plannedWorkout
+  if (!pw) return null
+
+  if (pw.runBlocks && pw.runBlocks.length > 0) {
+    return (
+      <div className="border border-[#262626] rounded-lg overflow-hidden">
+        <div className="bg-[#1c1c1c] px-3 py-1.5 flex items-center justify-between">
+          <span className="text-[10px] text-[#a3a3a3] uppercase tracking-wider font-medium">Séance planifiée</span>
+          {pw.focusLabel && <span className="text-[10px] text-[#a3a3a3]">{pw.focusLabel}</span>}
+        </div>
+        <div className="divide-y divide-[#1a1a1a]">
+          {pw.runBlocks.map(block => {
+            const color = RUN_BLOCK_COLORS[block.type] ?? '#a3a3a3'
+            const label = RUN_BLOCK_LABELS[block.type] ?? block.type
+            return (
+              <div key={block.id} className="p-2.5 flex items-start gap-2.5">
+                <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: color }} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium" style={{ color }}>{label}</span>
+                    {block.durationMin != null && (
+                      <span className="text-xs text-[#a3a3a3] font-data">{block.durationMin} min</span>
+                    )}
+                    {block.reps != null && block.repDistanceM != null && (
+                      <span className="text-xs text-white font-data">{block.reps}×{block.repDistanceM}m</span>
+                    )}
+                    {block.reps != null && block.repDurationMin != null && !block.repDistanceM && (
+                      <span className="text-xs text-white font-data">{block.reps}×{block.repDurationMin} min</span>
+                    )}
+                    {block.repPace && (
+                      <span className="text-xs text-[#a3a3a3] font-data">@ {block.repPace}/km</span>
+                    )}
+                    {block.pace && !block.repPace && (
+                      <span className="text-xs text-[#a3a3a3] font-data">@ {block.pace}/km</span>
+                    )}
+                    {block.recoveryMin != null && (
+                      <span className="text-xs text-[#a3a3a3]">
+                        récup {block.recoveryMin < 1 ? `${Math.round(block.recoveryMin * 60)}s` : `${block.recoveryMin} min`}
+                      </span>
+                    )}
+                    {block.hrZone != null && (
+                      <span className="text-xs text-[#a3a3a3]">Z{block.hrZone}</span>
+                    )}
+                  </div>
+                  {block.notes && (
+                    <p className="text-[11px] text-[#666] mt-0.5 leading-snug">{block.notes}</p>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  if (pw.exercises && pw.exercises.length > 0) {
+    return (
+      <div className="border border-[#262626] rounded-lg overflow-hidden">
+        <div className="bg-[#1c1c1c] px-3 py-1.5 flex items-center justify-between">
+          <span className="text-[10px] text-[#a3a3a3] uppercase tracking-wider font-medium">Programme muscu</span>
+          {pw.focusLabel && <span className="text-[10px] text-[#ff3b30] font-medium">{pw.focusLabel}</span>}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-[#1a1a1a]">
+                <th className="text-left px-3 py-1.5 text-[#a3a3a3] font-medium">Exercice</th>
+                <th className="text-center px-2 py-1.5 text-[#a3a3a3] font-medium">Séries</th>
+                <th className="text-center px-2 py-1.5 text-[#a3a3a3] font-medium">Reps</th>
+                <th className="text-center px-2 py-1.5 text-[#a3a3a3] font-medium">Repos</th>
+                <th className="text-center px-2 py-1.5 text-[#a3a3a3] font-medium">RPE</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#1a1a1a]">
+              {pw.exercises.map(ex => (
+                <tr key={ex.id}>
+                  <td className="px-3 py-2">
+                    <div className="text-white font-medium leading-snug">{ex.name}</div>
+                    {ex.muscleGroup && (
+                      <div className="text-[10px] text-[#666] mt-0.5">{MUSCLE_SHORT[ex.muscleGroup] ?? ex.muscleGroup}</div>
+                    )}
+                  </td>
+                  <td className="text-center px-2 py-2 font-data text-white">{ex.sets}</td>
+                  <td className="text-center px-2 py-2 font-data text-[#e5e5e5]">{ex.reps}</td>
+                  <td className="text-center px-2 py-2 font-data text-[#a3a3a3]">{ex.restSec != null ? `${ex.restSec}s` : '—'}</td>
+                  <td className="text-center px-2 py-2 font-data text-[#a3a3a3]">{ex.rpe != null ? ex.rpe : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {pw.coachNotes && (
+          <div className="px-3 py-2 bg-[#0a0a0a] border-t border-[#1a1a1a]">
+            <p className="text-[11px] text-[#a3a3a3]">{pw.coachNotes}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return null
+}
+
+// ─── Similar sessions comparison ─────────────────────────────────────────────
+function SimilarSessions({ current, sessions }: { current: TrainingSession; sessions: TrainingSession[] }) {
+  const similar = sessions
+    .filter(s => s.id !== current.id && s.sport === current.sport && s.type === current.type && s.report?.completedAt)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 3)
+
+  if (similar.length === 0) return null
+
+  return (
+    <div className="border border-[#262626] rounded-lg overflow-hidden">
+      <div className="bg-[#1c1c1c] px-3 py-1.5">
+        <span className="text-[10px] text-[#a3a3a3] uppercase tracking-wider font-medium">Séances similaires</span>
+      </div>
+      <div className="divide-y divide-[#1a1a1a]">
+        {similar.map(s => (
+          <div key={s.id} className="px-3 py-2 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs text-white font-medium truncate">{s.title}</div>
+              <div className="text-[10px] text-[#666] mt-0.5">
+                {new Date(s.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {s.report?.duration != null && (
+                <div className="text-right">
+                  <div className="text-xs font-data text-[#e5e5e5]">{fmtMin(s.report.duration)}</div>
+                  <div className="text-[10px] text-[#666]">durée</div>
+                </div>
+              )}
+              {s.report?.distance != null && (
+                <div className="text-right">
+                  <div className="text-xs font-data text-[#e5e5e5]">{s.report.distance} km</div>
+                  <div className="text-[10px] text-[#666]">dist.</div>
+                </div>
+              )}
+              {s.report?.rpe != null && (
+                <div className="text-right">
+                  <div className="text-xs font-data text-[#e5e5e5]">{s.report.rpe}/10</div>
+                  <div className="text-[10px] text-[#666]">RPE</div>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
