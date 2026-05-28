@@ -81,7 +81,7 @@ function buildInitialReport(session: TrainingSession): Partial<SessionReport> {
 
 // ─── Modal ───────────────────────────────────────────────────────────────────
 export function SessionModal({ session, open, onClose }: { session: TrainingSession; open: boolean; onClose: () => void }) {
-  const { updateSession, addSession, removeSession, addTemplate, profile, sessions } = useAppStore()
+  const { updateSession, addSession, addSessions, removeSession, addTemplate, profile, sessions } = useAppStore()
   const [tab, setTab] = useState<Tab>('details')
   const [editing, setEditing] = useState(!session.id || session.title === 'Nouvelle séance')
   const [alreadyAdded, setAlreadyAdded] = useState(false)
@@ -94,6 +94,7 @@ export function SessionModal({ session, open, onClose }: { session: TrainingSess
   const [saved, setSaved] = useState(false)
   const [prBanner, setPrBanner] = useState<string | null>(null)
   const [templateSaved, setTemplateSaved] = useState(false)
+  const [repeatWeeks, setRepeatWeeks] = useState(0)
 
   if (!open) return null
 
@@ -157,7 +158,16 @@ export function SessionModal({ session, open, onClose }: { session: TrainingSess
       updatedAt: new Date().toISOString(),
     }
     if (isNew && !alreadyAdded) {
-      addSession(updated)
+      if (repeatWeeks > 0) {
+        const recurring: TrainingSession[] = Array.from({ length: repeatWeeks }, (_, i) => {
+          const d = new Date(session.date)
+          d.setDate(d.getDate() + (i + 1) * 7)
+          return { ...updated, id: crypto.randomUUID(), date: d.toISOString().split('T')[0] }
+        })
+        addSessions([updated, ...recurring])
+      } else {
+        addSession(updated)
+      }
       setAlreadyAdded(true)
     } else {
       updateSession(session.id, updated)
@@ -345,6 +355,32 @@ Question: ${coachQuestion || 'Analyse cette séance et donne-moi des conseils po
               )}
 
               <SimilarSessions current={session} sessions={sessions} />
+
+              {isNew && editing && (
+                <div className="p-3 bg-[#0a0a0a] rounded-lg border border-[#262626]">
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      id="repeat"
+                      checked={repeatWeeks > 0}
+                      onChange={e => setRepeatWeeks(e.target.checked ? 3 : 0)}
+                      className="accent-[#ff3b30]"
+                    />
+                    <label htmlFor="repeat" className="text-sm text-[#e5e5e5] cursor-pointer">Répéter chaque semaine</label>
+                  </div>
+                  {repeatWeeks > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-[#a3a3a3]">Pendant</span>
+                      <input
+                        type="number" min={1} max={52} value={repeatWeeks}
+                        onChange={e => setRepeatWeeks(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-16 bg-[#141414] border border-[#404040] rounded px-2 py-1 text-white text-sm font-data text-center focus:outline-none focus:border-[#ff3b30]"
+                      />
+                      <span className="text-xs text-[#a3a3a3]">semaines supplémentaires</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-2 pt-1">
                 {!session.completed && !isNew && (

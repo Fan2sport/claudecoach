@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { format, addWeeks, subWeeks, startOfWeek, addDays, isSameDay, isToday, isPast, getWeek } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { useAppStore } from '@/lib/store'
@@ -22,6 +22,49 @@ export function CalendarView() {
   const { sessions, plan, profile, updateSession, setSessions, setPlan, currentWeekOffset, setWeekOffset } = useAppStore()
   const [selectedSession, setSelectedSession] = useState<TrainingSession | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function startLongPress(dayStr: string) {
+    longPressTimer.current = setTimeout(() => createSessionOnDay(dayStr), 500)
+  }
+  function cancelLongPress() {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
+  }
+
+  function createSessionOnDay(dayStr: string) {
+    const newSession: TrainingSession = {
+      id: crypto.randomUUID(), userId: profile?.id ?? '',
+      date: dayStr, sport: 'running', type: 'easy_run',
+      title: 'Nouvelle séance', completed: false,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }
+    setSelectedSession(newSession)
+    setModalOpen(true)
+  }
+
+  function shiftPlan(weeks: number) {
+    const shifted = sessions
+      .filter(s => !s.completed && new Date(s.date) >= new Date())
+      .map(s => {
+        const d = new Date(s.date)
+        d.setDate(d.getDate() + weeks * 7)
+        return { id: s.id, date: format(d, 'yyyy-MM-dd') }
+      })
+    shifted.forEach(({ id, date }) => updateSession(id, { date }))
+  }
+
+  function exportWeekPDF() {
+    const title = `Semaine S${weekNumber} — ${format(weekStart, 'd MMM', { locale: fr })} au ${format(weekEnd, 'd MMM yyyy', { locale: fr })}`
+    const lines = days.map((day, idx) => {
+      const ds = weekSessions[idx]
+      const dayLabel = format(day, 'EEEE d MMM', { locale: fr })
+      if (ds.length === 0) return `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee;color:#999">${dayLabel}</td><td style="padding:8px 12px;border-bottom:1px solid #eee;color:#ccc">Repos</td></tr>`
+      return ds.map(s => `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee">${dayLabel}</td><td style="padding:8px 12px;border-bottom:1px solid #eee"><strong>${s.title}</strong>${s.plannedDuration ? ` · ${s.plannedDuration}min` : ''}${s.description ? `<br><small style="color:#666">${s.description}</small>` : ''}</td></tr>`).join('')
+    }).join('')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:system-ui,sans-serif;padding:24px;color:#111}h1{font-size:18px;margin-bottom:16px}table{width:100%;border-collapse:collapse}td{vertical-align:top}@media print{body{padding:0}}</style></head><body><h1>${title}</h1><table>${lines}</table></body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close(); w.print() }
+  }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -118,13 +161,29 @@ export function CalendarView() {
             >
               →
             </button>
+            {sessions.filter(s => !s.completed && new Date(s.date) >= new Date()).length > 0 && (
+              <button
+                onClick={() => { if (confirm('Décaler toutes les séances futures d\'une semaine ?')) shiftPlan(1) }}
+                className="px-3 py-1.5 border border-[#262626] text-[#a3a3a3] hover:text-white hover:border-[#404040] text-xs rounded-lg transition-colors"
+                title="Décaler toutes les séances futures d'une semaine"
+              >
+                Décaler →
+              </button>
+            )}
+            <button
+              onClick={exportWeekPDF}
+              className="px-3 py-1.5 border border-[#262626] text-[#a3a3a3] hover:text-white hover:border-[#404040] text-xs rounded-lg transition-colors"
+              title="Exporter la semaine en PDF"
+            >
+              PDF
+            </button>
             {profile?.objectives?.length ? (
               <button
                 onClick={() => {
                   if (plan && sessions.length > 0 && !confirm('Regénérer efface le plan actuel et toutes les séances. Continuer ?')) return
                   handleGeneratePlan()
                 }}
-                className="ml-2 px-3 py-1.5 bg-[#ff3b30] hover:bg-[#ff5a52] text-white text-xs font-semibold rounded-lg transition-colors"
+                className="ml-1 px-3 py-1.5 bg-[#ff3b30] hover:bg-[#ff5a52] text-white text-xs font-semibold rounded-lg transition-colors"
               >
                 {plan && sessions.length > 0 ? 'Regénérer le plan' : 'Générer le plan'}
               </button>
@@ -170,11 +229,16 @@ export function CalendarView() {
               return (
                 <DroppableDay key={dayStr} id={dayStr}>
                   <div
-                    className={`rounded-xl border p-2 min-h-[120px] transition-colors ${
+                    className={`rounded-xl border p-2 min-h-[120px] transition-colors select-none ${
                       isCurrentDay
                         ? 'border-[#ff3b30]/40 bg-[#ff3b30]/5'
                         : 'border-[#262626] bg-[#141414]'
                     } ${isPastDay ? 'opacity-60' : ''}`}
+                    onMouseDown={() => startLongPress(dayStr)}
+                    onMouseUp={cancelLongPress}
+                    onMouseLeave={cancelLongPress}
+                    onTouchStart={() => startLongPress(dayStr)}
+                    onTouchEnd={cancelLongPress}
                   >
                     {/* Day header */}
                     <div className="flex items-center justify-between mb-2">
@@ -187,21 +251,7 @@ export function CalendarView() {
                         </div>
                       </div>
                       <button
-                        onClick={() => {
-                          const newSession: TrainingSession = {
-                            id: crypto.randomUUID(),
-                            userId: profile?.id ?? '',
-                            date: dayStr,
-                            sport: 'running',
-                            type: 'easy_run',
-                            title: 'Nouvelle séance',
-                            completed: false,
-                            createdAt: new Date().toISOString(),
-                            updatedAt: new Date().toISOString(),
-                          }
-                          setSelectedSession(newSession)
-                          setModalOpen(true)
-                        }}
+                        onClick={e => { e.stopPropagation(); cancelLongPress(); createSessionOnDay(dayStr) }}
                         className="w-5 h-5 rounded-full border border-[#262626] text-[#404040] hover:text-white hover:border-[#ff3b30] text-xs flex items-center justify-center transition-colors"
                       >
                         +

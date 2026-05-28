@@ -11,6 +11,7 @@ interface AppState {
   updateProfile: (partial: Partial<UserProfile>) => void
   setSessions: (sessions: TrainingSession[]) => void
   addSession: (session: TrainingSession) => void
+  addSessions: (sessions: TrainingSession[]) => void
   updateSession: (id: string, updates: Partial<TrainingSession>) => void
   removeSession: (id: string) => void
   setPlan: (plan: TrainingPlan | null) => void
@@ -34,6 +35,8 @@ export const useAppStore = create<AppState>()(
       setSessions: (sessions) => set({ sessions }),
       addSession: (session) =>
         set((state) => ({ sessions: [...state.sessions, session] })),
+      addSessions: (newSessions) =>
+        set((state) => ({ sessions: [...state.sessions, ...newSessions] })),
       updateSession: (id, updates) =>
         set((state) => ({
           sessions: state.sessions.map((s) =>

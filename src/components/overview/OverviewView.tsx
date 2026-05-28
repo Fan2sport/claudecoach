@@ -139,14 +139,35 @@ export function OverviewView() {
     { label: 'Marge temps', weight: 20, score: confidence.timeMargin, desc: `${daysRemaining} jours restants` },
   ]
 
+  const nextSessions = sessions
+    .filter(s => !s.completed && new Date(s.date) >= now)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(0, 3)
+
   return (
     <div className="space-y-6 pb-20 md:pb-0">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Vue d&apos;ensemble</h1>
-        {primaryObjective && (
-          <p className="text-[#a3a3a3] text-sm mt-1">
-            Objectif : <span className="text-white">{primaryObjective.name}</span> — {format(new Date(primaryObjective.targetDate), 'd MMMM yyyy', { locale: fr })}
-          </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Vue d&apos;ensemble</h1>
+          {primaryObjective && (
+            <p className="text-[#a3a3a3] text-sm mt-1">
+              Objectif : <span className="text-white">{primaryObjective.name}</span>
+            </p>
+          )}
+        </div>
+        {primaryObjective && daysRemaining <= 365 && (
+          <div className="flex flex-col items-end gap-1">
+            <div
+              className="px-4 py-2 rounded-xl border text-center"
+              style={{ borderColor: `${confidenceColor}40`, backgroundColor: `${confidenceColor}10` }}
+            >
+              <div className="font-display text-3xl font-bold" style={{ color: confidenceColor }}>J-{daysRemaining}</div>
+              <div className="text-[10px] text-[#a3a3a3] mt-0.5 uppercase tracking-wide">{primaryObjective.name}</div>
+            </div>
+            <div className="text-[10px] text-[#5a5a5a] font-data">
+              {format(new Date(primaryObjective.targetDate), 'd MMM yyyy', { locale: fr })}
+            </div>
+          </div>
         )}
       </div>
 
@@ -218,6 +239,44 @@ export function OverviewView() {
           </div>
         ))}
       </div>
+
+      {/* Upcoming sessions */}
+      {nextSessions.length > 0 && (
+        <div className="bg-[#141414] border border-[#262626] rounded-2xl p-4">
+          <h3 className="text-white font-medium text-sm mb-3">Prochaines séances</h3>
+          <div className="space-y-2">
+            {nextSessions.map((s, i) => {
+              const color = SPORT_COLORS[s.sport] ?? '#a3a3a3'
+              const daysUntil = Math.round((new Date(s.date).getTime() - now.getTime()) / 86400000)
+              return (
+                <div key={s.id} className="flex items-center gap-3 p-3 bg-[#0a0a0a] rounded-xl border border-[#1a1a1a]">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: `${color}18` }}>
+                    {SPORT_ICONS[s.sport]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white text-sm font-medium truncate">{s.title}</div>
+                    <div className="text-[#5a5a5a] text-xs font-data mt-0.5">
+                      {format(new Date(s.date), 'EEE d MMM', { locale: fr })}
+                      {s.plannedDuration ? ` · ${formatDuration(s.plannedDuration)}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    {i === 0 && daysUntil === 0 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-[#ff3b30]/20 text-[#ff3b30] border border-[#ff3b30]/30">Aujourd&apos;hui</span>
+                    )}
+                    {i === 0 && daysUntil === 1 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Demain</span>
+                    )}
+                    {daysUntil > 1 && (
+                      <span className="font-data text-xs text-[#5a5a5a]">J+{daysUntil}</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Weekly summary */}
       <div className="bg-[#141414] border border-[#262626] rounded-2xl p-4">
