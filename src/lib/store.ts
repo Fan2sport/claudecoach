@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { UserProfile, TrainingSession, TrainingPlan } from '@/types'
+import type { UserProfile, TrainingSession, TrainingPlan, SessionTemplate } from '@/types'
 
 interface AppState {
   profile: UserProfile | null
@@ -15,6 +15,8 @@ interface AppState {
   removeSession: (id: string) => void
   setPlan: (plan: TrainingPlan | null) => void
   setWeekOffset: (offset: number) => void
+  addTemplate: (template: SessionTemplate) => void
+  removeTemplate: (id: string) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -44,6 +46,18 @@ export const useAppStore = create<AppState>()(
         })),
       setPlan: (plan) => set({ plan }),
       setWeekOffset: (offset) => set({ currentWeekOffset: offset }),
+      addTemplate: (template) =>
+        set((state) => ({
+          profile: state.profile
+            ? { ...state.profile, templates: [...(state.profile.templates ?? []), template] }
+            : null,
+        })),
+      removeTemplate: (id) =>
+        set((state) => ({
+          profile: state.profile
+            ? { ...state.profile, templates: (state.profile.templates ?? []).filter(t => t.id !== id) }
+            : null,
+        })),
     }),
     {
       name: 'athletex-store',

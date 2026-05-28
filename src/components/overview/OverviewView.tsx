@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { useAppStore } from '@/lib/store'
 import { calculateConfidenceScore, SPORT_COLORS, SPORT_LABELS, SPORT_ICONS, formatDuration } from '@/lib/utils'
-import { format, startOfWeek, addDays, subWeeks, getWeek } from 'date-fns'
+import { format, startOfWeek, endOfWeek, addDays, subWeeks, getWeek } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -102,8 +102,35 @@ export function OverviewView() {
   }, [sessions])
 
   const thisWeekStart = startOfWeek(now, { weekStartsOn: 1 })
-  const thisWeekSessions = sessions.filter(s => new Date(s.date) >= thisWeekStart && new Date(s.date) <= addDays(thisWeekStart, 6))
+  const thisWeekEnd = endOfWeek(now, { weekStartsOn: 1 })
+  const lastWeekStart = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 })
+  const lastWeekEnd = endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 })
+
+  const thisWeekSessions = sessions.filter(s => new Date(s.date) >= thisWeekStart && new Date(s.date) <= thisWeekEnd)
+  const lastWeekSessions = sessions.filter(s => new Date(s.date) >= lastWeekStart && new Date(s.date) <= lastWeekEnd)
   const thisWeekCompleted = thisWeekSessions.filter(s => s.completed).length
+  const thisWeekVolume = thisWeekSessions.filter(s => s.completed).reduce((acc, s) => acc + (s.report?.duration ?? s.plannedDuration ?? 0), 0)
+  const lastWeekVolume = lastWeekSessions.filter(s => s.completed).reduce((acc, s) => acc + (s.report?.duration ?? s.plannedDuration ?? 0), 0)
+  const volumeDelta = lastWeekVolume > 0 ? Math.round(((thisWeekVolume - lastWeekVolume) / lastWeekVolume) * 100) : null
+
+  const bestSessionThisWeek = thisWeekSessions.filter(s => s.completed && s.report?.rpe).sort((a, b) => (b.report!.rpe! - a.report!.rpe!)).at(0)
+  const nextSession = sessions.filter(s => !s.completed && new Date(s.date) >= now).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).at(0)
+
+  // Adaptive plan signals
+  const recentWithRpe = sessions
+    .filter(s => s.completed && s.report?.rpe != null)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 7)
+  const avgRpe = recentWithRpe.length >= 3
+    ? Math.round((recentWithRpe.reduce((acc, s) => acc + s.report!.rpe!, 0) / recentWithRpe.length) * 10) / 10
+    : null
+  const recentPast = sessions.filter(s => {
+    const d = new Date(s.date)
+    return d <= now && d >= subWeeks(now, 4) && s.sport !== 'rest'
+  })
+  const recentMissedPct = recentPast.length > 0
+    ? Math.round((recentPast.filter(s => !s.completed).length / recentPast.length) * 100)
+    : 0
 
   const CRITERIA = [
     { label: 'Régularité', weight: 30, score: confidence.regularity, desc: `${completedSessions}/${plannedSessions} séances effectuées` },
@@ -191,6 +218,92 @@ export function OverviewView() {
           </div>
         ))}
       </div>
+
+      {/* Weekly summary */}
+      <div className="bg-[#141414] border border-[#262626] rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-medium text-sm">Résumé de la semaine</h3>
+          <span className="text-[#5a5a5a] text-xs font-data">
+            S{getWeek(thisWeekStart, { weekStartsOn: 1 })} — {format(thisWeekStart, 'd', { locale: fr })}–{format(thisWeekEnd, 'd MMM', { locale: fr })}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-[#0a0a0a] rounded-xl p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-[#a3a3a3] uppercase tracking-wide mb-1.5">Séances</div>
+            <div className="font-data text-xl font-bold text-white">{thisWeekCompleted}/{thisWeekSessions.length}</div>
+            <div className="text-[10px] text-[#5a5a5a] mt-0.5">effectuées</div>
+          </div>
+          <div className="bg-[#0a0a0a] rounded-xl p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-[#a3a3a3] uppercase tracking-wide mb-1.5">Volume</div>
+            <div className="font-data text-xl font-bold text-white">{formatDuration(thisWeekVolume)}</div>
+            {volumeDelta !== null && (
+              <div className={`text-[10px] mt-0.5 font-data ${volumeDelta >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {volumeDelta >= 0 ? '+' : ''}{volumeDelta}% vs S-1
+              </div>
+            )}
+          </div>
+          <div className="bg-[#0a0a0a] rounded-xl p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-[#a3a3a3] uppercase tracking-wide mb-1.5">Meilleure séance</div>
+            {bestSessionThisWeek ? (
+              <>
+                <div className="text-xs text-white font-medium truncate">{SPORT_ICONS[bestSessionThisWeek.sport]} {bestSessionThisWeek.title}</div>
+                <div className="text-[10px] text-[#5a5a5a] mt-0.5 font-data">RPE {bestSessionThisWeek.report!.rpe}/10</div>
+              </>
+            ) : (
+              <div className="text-[10px] text-[#404040] mt-1">Aucune encore</div>
+            )}
+          </div>
+          <div className="bg-[#0a0a0a] rounded-xl p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-[#a3a3a3] uppercase tracking-wide mb-1.5">Prochaine séance</div>
+            {nextSession ? (
+              <>
+                <div className="text-xs text-white font-medium truncate">{SPORT_ICONS[nextSession.sport]} {nextSession.title}</div>
+                <div className="text-[10px] text-[#5a5a5a] mt-0.5 font-data">{format(new Date(nextSession.date), 'EEE d MMM', { locale: fr })}</div>
+              </>
+            ) : (
+              <div className="text-[10px] text-[#404040] mt-1">Aucune prévue</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Adaptive plan hints */}
+      {(avgRpe != null || recentMissedPct > 0) && (() => {
+        type Hint = { type: 'warn' | 'ok' | 'info'; icon: string; title: string; body: string }
+        const hints: Hint[] = []
+        if (avgRpe != null && avgRpe >= 8.0) {
+          hints.push({ type: 'warn', icon: '🔴', title: 'Fatigue détectée', body: `RPE moyen ${avgRpe}/10 sur tes 7 dernières séances — considère de réduire l'intensité ou d'ajouter une séance de récupération.` })
+        }
+        if (avgRpe != null && avgRpe <= 5.0) {
+          hints.push({ type: 'ok', icon: '🟢', title: 'Tu peux augmenter la charge', body: `RPE moyen ${avgRpe}/10 — tes séances semblent confortables. C'est le bon moment pour hausser le volume ou l'intensité.` })
+        }
+        if (recentMissedPct >= 40) {
+          hints.push({ type: 'info', icon: '📅', title: 'Régularité à améliorer', body: `${recentMissedPct}% de tes séances des 4 dernières semaines n'ont pas été effectuées. Tente de réduire le nombre de jours ou l'intensité pour mieux adhérer au plan.` })
+        }
+        if (hints.length === 0) return null
+        return (
+          <div className="space-y-2">
+            {hints.map((h, i) => (
+              <div
+                key={i}
+                className={`rounded-xl p-3.5 border flex items-start gap-3 ${
+                  h.type === 'warn' ? 'border-red-500/30 bg-red-500/5' :
+                  h.type === 'ok' ? 'border-green-500/30 bg-green-500/5' :
+                  'border-yellow-500/30 bg-yellow-500/5'
+                }`}
+              >
+                <span className="text-xl flex-shrink-0">{h.icon}</span>
+                <div>
+                  <div className={`text-sm font-semibold ${h.type === 'warn' ? 'text-red-400' : h.type === 'ok' ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {h.title}
+                  </div>
+                  <div className="text-xs text-[#a3a3a3] mt-0.5 leading-relaxed">{h.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -59,8 +59,13 @@ export function CalendarView() {
       return
     }
     const newPlan = generatePlan(profile)
+    // Preserve completed sessions — only replace non-completed slots
+    const completed = sessions.filter(s => s.completed)
+    const completedKeys = new Set(completed.map(s => `${s.date}|${s.sport}`))
+    const fresh = newPlan.sessions.filter(s => !completedKeys.has(`${s.date}|${s.sport}`))
+    const merged = [...completed, ...fresh].sort((a, b) => a.date.localeCompare(b.date))
     setPlan(newPlan)
-    setSessions(newPlan.sessions)
+    setSessions(merged)
   }
 
   return (
