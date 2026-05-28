@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { TrainingSession, SessionReport, Sport, DetailedExercise, SessionTemplate } from '@/types'
+import type { TrainingSession, SessionReport, Sport, DetailedExercise, SessionTemplate, PlannedExercise, PlannedWorkout, MuscleGroup } from '@/types'
 import { useAppStore } from '@/lib/store'
 import { SPORT_COLORS, SPORT_ICONS, SPORT_LABELS } from '@/lib/utils'
 import { v4 as uuidv4 } from 'uuid'
@@ -89,6 +89,7 @@ export function SessionModal({ session, open, onClose }: { session: TrainingSess
   const [description, setDescription] = useState(session.description ?? '')
   const [sport, setSport] = useState<Sport>(session.sport)
   const [report, setReport] = useState<Partial<SessionReport>>(buildInitialReport(session))
+  const [editedWorkout, setEditedWorkout] = useState<PlannedWorkout | undefined>(session.plannedWorkout)
   const [coachQuestion, setCoachQuestion] = useState('')
   const [saved, setSaved] = useState(false)
   const [prBanner, setPrBanner] = useState<string | null>(null)
@@ -150,6 +151,7 @@ export function SessionModal({ session, open, onClose }: { session: TrainingSess
       title,
       description,
       sport,
+      plannedWorkout: editedWorkout,
       completed: !!report.completedAt || session.completed,
       report: Object.keys(report).length > 0 ? report as SessionReport : undefined,
       updatedAt: new Date().toISOString(),
@@ -333,7 +335,14 @@ Question: ${coachQuestion || 'Analyse cette séance et donne-moi des conseils po
                 </div>
               )}
 
-              <PlannedWorkoutDisplay session={session} />
+              {editing && (sport === 'strength' || sport === 'powerlifting' || sport === 'calisthenics') && editedWorkout?.exercises?.length ? (
+                <EditablePlannedExercises
+                  exercises={editedWorkout.exercises}
+                  onChange={exs => setEditedWorkout(prev => prev ? { ...prev, exercises: exs } : { exercises: exs })}
+                />
+              ) : (
+                <PlannedWorkoutDisplay session={{ ...session, plannedWorkout: editedWorkout }} />
+              )}
 
               <SimilarSessions current={session} sessions={sessions} />
 
@@ -1081,6 +1090,101 @@ function GenericReportForm({ report, onChange }: { report: Partial<SessionReport
       <RpeSlider value={report.rpe} onChange={v => set('rpe', v)} />
       <NotesField value={report.notes} onChange={v => set('notes', v)} />
       <CompletedCheckbox value={report.completedAt} onChange={v => set('completedAt', v)} />
+    </div>
+  )
+}
+
+// ─── Editable planned exercises (muscu) ─────────────────────────────────────
+const MUSCLE_OPTIONS = [
+  { key: 'chest', label: 'Pectoraux' }, { key: 'back', label: 'Dos' },
+  { key: 'shoulders', label: 'Épaules' }, { key: 'biceps', label: 'Biceps' },
+  { key: 'triceps', label: 'Triceps' }, { key: 'quads', label: 'Cuisses' },
+  { key: 'hamstrings', label: 'Ischio' }, { key: 'glutes', label: 'Fessiers' },
+  { key: 'calves', label: 'Mollets' }, { key: 'core', label: 'Abdos' },
+]
+
+function EditablePlannedExRow({ exercise, onChange, onRemove }: {
+  exercise: PlannedExercise
+  onChange: (u: Partial<PlannedExercise>) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="bg-[#0a0a0a] border border-[#333] rounded-lg p-2.5 space-y-2">
+      <div className="flex items-center gap-2">
+        <input
+          value={exercise.name}
+          onChange={e => onChange({ name: e.target.value })}
+          className="flex-1 bg-[#141414] border border-[#404040] rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-[#ff3b30] min-w-0"
+          placeholder="Nom de l'exercice"
+        />
+        <select
+          value={exercise.muscleGroup ?? ''}
+          onChange={e => onChange({ muscleGroup: (e.target.value as MuscleGroup) || undefined })}
+          className="bg-[#141414] border border-[#404040] rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-[#ff3b30] shrink-0"
+        >
+          <option value="">Muscle</option>
+          {MUSCLE_OPTIONS.map(({ key, label }) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
+        <button onClick={onRemove} className="text-[#a3a3a3] hover:text-red-400 text-xs shrink-0 transition-colors">✕</button>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
+        <div>
+          <p className="text-[9px] text-[#a3a3a3] uppercase tracking-wide mb-0.5">Séries</p>
+          <SmallInput value={exercise.sets} onChange={v => onChange({ sets: parseInt(v) || 1 })} placeholder="4" type="number" />
+        </div>
+        <div>
+          <p className="text-[9px] text-[#a3a3a3] uppercase tracking-wide mb-0.5">Reps</p>
+          <SmallInput value={exercise.reps} onChange={v => onChange({ reps: v })} placeholder="8-12" />
+        </div>
+        <div>
+          <p className="text-[9px] text-[#a3a3a3] uppercase tracking-wide mb-0.5">Poids kg</p>
+          <SmallInput value={exercise.weightKg} onChange={v => onChange({ weightKg: parseFloat(v) || undefined })} placeholder="60" type="number" />
+        </div>
+        <div>
+          <p className="text-[9px] text-[#a3a3a3] uppercase tracking-wide mb-0.5">Repos s</p>
+          <SmallInput value={exercise.restSec} onChange={v => onChange({ restSec: parseInt(v) || undefined })} placeholder="90" type="number" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EditablePlannedExercises({ exercises, onChange }: {
+  exercises: PlannedExercise[]
+  onChange: (exercises: PlannedExercise[]) => void
+}) {
+  function updateEx(id: string, updates: Partial<PlannedExercise>) {
+    onChange(exercises.map(e => e.id === id ? { ...e, ...updates } : e))
+  }
+  function removeEx(id: string) {
+    onChange(exercises.filter(e => e.id !== id))
+  }
+  function addEx() {
+    onChange([...exercises, { id: crypto.randomUUID(), name: '', sets: 3, reps: '10' }])
+  }
+  return (
+    <div className="border border-[#262626] rounded-lg overflow-hidden">
+      <div className="bg-[#1c1c1c] px-3 py-1.5 flex items-center justify-between">
+        <span className="text-[10px] text-[#a3a3a3] uppercase tracking-wider font-medium">Programme muscu</span>
+        <button
+          onClick={addEx}
+          className="text-xs px-2 py-0.5 bg-[#ff3b30]/10 text-[#ff3b30] border border-[#ff3b30]/30 rounded hover:bg-[#ff3b30]/20 transition-colors"
+        >
+          + Ajouter
+        </button>
+      </div>
+      <div className="p-3 space-y-2">
+        {exercises.map(ex => (
+          <EditablePlannedExRow
+            key={ex.id}
+            exercise={ex}
+            onChange={u => updateEx(ex.id, u)}
+            onRemove={() => removeEx(ex.id)}
+          />
+        ))}
+      </div>
     </div>
   )
 }
